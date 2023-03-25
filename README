@@ -1,0 +1,24 @@
+The files in this directory are for reproducing the results in 
+the manuscript entitled "Canonical and Noncanonical Hamiltonian Operator Inference"
+by A. Gruber, I. Tezaur and M. Gunzburger. 
+
+The do-cmake-trilinos and do-cmake-albany are configure 
+scripts for the Trilinos and Albany-LCM codes, which can be
+checked out on github at the following URLs respectively: 
+
+https://github.com/trilinos/Trilinos
+https://github.com/sandialabs/LCM
+
+To generate the results in the paper, the following shas of these libraries
+were used: 
+
+79d3a68bd6176c80ae10e693cd15b1040f6be10f (Trilinos)
+322132d613777d48b85d70ed95c0ff4a07c8aed0 (Albany)
+
+Once building the Albany executable, the 3D linear elastic cantilever 
+plate problem can be reproduced by running 
+
+./Albany beam_zVelIC.yaml 
+
+Absolute errors plotted in the paper were calculated using netcdf's 'algebra' 
+utility using the alg.i file fond in this directory.  
