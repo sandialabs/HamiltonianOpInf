@@ -1,5 +1,5 @@
 # Convenience functions for running the various OpInf procedures
-# Anthony Gruber 3-31-2023
+# Anthony Gruber 5-28-2023
 
 import numpy as np
 from numpy.linalg import solve
@@ -66,11 +66,10 @@ def build_OpInf_stuff(UU, xData, xDotData, gradHData, J,
         return   [NCops, Cops, Gops]
     else:   # Recall that mean-centering only makes sense for N-C-OpInf
         return NCops
+    
 
-
-# Infer L in xDot = LgradH(x) 
-# Tikhonov parameter eps is scaled by P2
-def NC_H_OpInf(OpList, n, eps=1.0e-15):
+# Infer L in xDot = L gradH(x) 
+def NC_H_OpInf(OpList, n, eps=0.):
 
     # Modification for block basis
     # No fancy tricks, have to compute everything
@@ -91,18 +90,19 @@ def NC_H_OpInf(OpList, n, eps=1.0e-15):
 
     # Solving NC-H-OpInf Problem
     iMat = np.eye(n)
-    P1   = (1+eps) * identity(n*n) - commutation_matrix_sp(n,n)
-    P2   = csc_matrix( np.kron(iMat, sgHatH) + np.kron(sgHatH, iMat) )
-    Mhat = spsolve(P2 @ P1, vec(rhs)).reshape((n,n), order='F')
+    P   = csc_matrix( np.kron(iMat, sgHatH) + np.kron(sgHatH, iMat) )
+    reg = 2 * eps * identity(n*n)
+    Lhat = spsolve(P + reg, vec(rhs)).reshape((n,n), order='F')
+    # reg =  eps * identity(n*n)
+    # Lhat = spsolve(P @ reg, vec(rhs)).reshape((n,n), order='F')
 
-    return Mhat - Mhat.T
+    return 0.5 * (Lhat - Lhat.T)
 
 
 # Infer A in xDot = JAx 
 # Can add snapshots of forcing if desired (TODO)
 # BorisZhu implments "H-OpInf" method from Sharma, Kramer, and Wang (2022)
-# Tikhonov parameter eps is scaled by P2
-def C_H_OpInf(OpList, n, Sigma=None, eps=1.0e-15, approx=True, BorisZhu=False):
+def C_H_OpInf(OpList, n, Sigma=None, eps=0., approx=True, BorisZhu=False):
 
     # Modification for block basis
     # No fancy tricks, have to compute everything
@@ -147,30 +147,30 @@ def C_H_OpInf(OpList, n, Sigma=None, eps=1.0e-15, approx=True, BorisZhu=False):
         rhs2    = temp2 + temp2.T
 
         # Solving the two requisite sub-problems
-        P1      = (1+eps) * identity(N*N) + commutation_matrix_sp(N,N)
         P21     = csc_matrix( np.kron(np.eye(N), xH2xH2t) 
                               + np.kron(xH2xH2t, np.eye(N)) )
         P22     = csc_matrix( np.kron(np.eye(N), xH1xH1t) 
                               + np.kron(xH1xH1t, np.eye(N)) )
-        B11     = spsolve(P21 @ P1, vec(rhs1)).reshape((N,N), order='F')
-        B22     = spsolve(P22 @ P1, vec(rhs2)).reshape((N,N), order='F')
+        A11     = spsolve(P21, vec(rhs1)).reshape((N,N), order='F')
+        A22     = spsolve(P22, vec(rhs2)).reshape((N,N), order='F')
         
         # Returning the block diagonal OpInf'd matrix
-        A22     = B11 + B11.T
-        A11     = B22 + B22.T
         Zb      = np.zeros((N,N))
-        A       = csc_matrix(np.block([[A11, Zb], [Zb, A22]]))
+        A       = csc_matrix(np.block([[A22, Zb], [Zb, A11]]))
         return A 
     
     else:   # implement my C-H-OpInf method
         # Can use whatever basis you want
-        temp     = Jhat.T @ xDotHat @ xHat.T
-        rhs      = temp + temp.T
-        P1       = (1+eps) * identity(n*n) + commutation_matrix_sp(n,n)
-        P2       = csc_matrix( np.kron(JhtJh, xHxHt) + np.kron(xHxHt, JhtJh) )
-        Bhat     = spsolve(P2 @ P1, vec(rhs)).reshape((n,n), order='F')
-        return Bhat + Bhat.T
+        temp    = Jhat.T @ xDotHat @ xHat.T
+        rhs     = temp + temp.T
+        P       = csc_matrix( np.kron(JhtJh, xHxHt) + np.kron(xHxHt, JhtJh) )
+        reg     = 2 * eps * identity(n*n)
+        Ahat    = spsolve(P + reg, vec(rhs)).reshape((n,n), order='F')
+        # reg     = eps * identity(n*n)
+        # Ahat    = spsolve(P @ reg, vec(rhs)).reshape((n,n), order='F')
 
+        return 0.5 * (Ahat + Ahat.T)
+    
 
 # Solving generic OpInf Problem with Willcox method.
 # Tikhonov parameter scaled by XX^T

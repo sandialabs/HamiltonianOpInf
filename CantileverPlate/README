@@ -22,3 +22,7 @@ plate problem can be reproduced by running
 
 Absolute errors plotted in the paper were calculated using netcdf's 'algebra' 
 utility using the alg.i file fond in this directory.  
+
+The various .ipynb files can be run straight down to reproduce the results in the paper.  The *_utils.py files contain the source code for the method.
+
+This code was released with DOE's permission under SCR#:2917.0.

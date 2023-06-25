@@ -10,7 +10,6 @@ from scipy.sparse.linalg import factorized
 
 # For additional plotting and gifing
 from functools import partial
-from IPython import display
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 
@@ -19,6 +18,38 @@ def relError(x, xHat):
     num = norm(x - xHat)
     den = norm(x)
     return num / den
+
+
+def integrate_LFOM(tRange, ics, M, C, K, p, gamma=1./2, beta=1./4):
+    N, n_t = M.shape[0], tRange.shape[0]
+    h      = tRange[1] - tRange[0]
+
+    M = csc_matrix(M)
+    C = csc_matrix(C)
+    K = csc_matrix(K)
+
+    q       = np.zeros((N, n_t))
+    qDot    = np.zeros((N, n_t))
+    qDotDot = np.zeros((N, n_t))
+    
+    q[:,0], qDot[:,0], qDotDot[:,0] = ics
+
+    LHS        = M + gamma * h * C + beta * h**2 * K
+    solve      = factorized(LHS)
+
+    for i,t in enumerate(tRange[:-1]):
+        rhst1 = C @ (qDot[:,i] + (1-gamma) * h * qDotDot[:,i])
+        rhst2 = K @ (q[:,i] + h * qDot[:,i] + 
+                     (0.5-beta) * h**2 * qDotDot[:,i])
+        rhs   = p(tRange[i+1]) - rhst1 - rhst2
+        
+        qDotDot[:,i+1] = solve(rhs)
+        qDot[:,i+1]    = qDot[:,i] + h * ((1-gamma) * qDotDot[:,i] 
+                                          + gamma * qDotDot[:,i+1])
+        q[:,i+1]       = q[:,i] + h * qDot[:,i] \
+                                + h**2 * ((0.5-beta) * qDotDot[:,i]
+                                        + beta * qDotDot[:,i+1])
+    return (q, qDot, qDotDot)
 
 
 # Function to collect snapshots of Linear FOM using implicit midpoint method
@@ -58,7 +89,7 @@ def integrate_Linear_HFOM(tRange, ic, L, A, safe=False):
 
 # Function which builds operators needed for intrusive ROM
 # Only useful when the basis is not blocked.
-def build_Linear_ROM_Ops(UU, L, A, ic, n=150, MC=False):
+def build_Linear_ROM_Ops(UU, L, A, ic, n=100, MC=False):
     ic = ic.flatten()
 
     # Modification for block basis
@@ -68,6 +99,7 @@ def build_Linear_ROM_Ops(UU, L, A, ic, n=150, MC=False):
     else:                       
         U = UU[:,:n]
 
+    # LHat  = -np.linalg.inv(U.T @ L @ U)
     LHat  = U.T @ L @ U
     AHat  = U.T @ A @ U
     LAHat = U.T @ L @ A @ U
@@ -106,6 +138,7 @@ def integrate_Linear_ROM(tTest, OpList, ic, UU, n,
         if Hamiltonian:
             if L.shape[0] == len(ic.flatten()):
                 LHat = U.T @ L @ U
+                # LHat = -np.linalg.inv(U.T @ L @ U)
             else:
                 # If OpList[0] has been replaced with an inferred Lhat
                 LHat = L    
@@ -208,7 +241,7 @@ def integrate_OpInf_ROM(tTest, DhatOp, ic, UU, L=None, approx=False):
 
 # Make mp4 movie of an array
 def animate_array(arrs, styles, labels, xCoords,
-                  eps_x=0.01, eps_y=0.1, yLims=None, save=True):
+                  eps_x=0.01, eps_y=0.1, yLims=None, legend_loc=0, save=True):
     n_t = arrs[0].shape[-1]
     
     # Define the update function that will be called at each iteration
@@ -236,7 +269,7 @@ def animate_array(arrs, styles, labels, xCoords,
     for i,line in enumerate(lines):
         lines[i], = ax.plot(xCoords, arrs[i][:,0], 
                             linestyle=styles[i], label=labels[i])
-    plt.legend()
+    plt.legend(loc=legend_loc)
 
     plotFunc = partial(update, lines, arrs)
     anim = FuncAnimation(fig, plotFunc, frames=n_t, interval=20)
