@@ -22,6 +22,7 @@ def FDapprox(y, step):
 # Vectorize column-wise
 def vec(A):
     m, n = A.shape[0], A.shape[1]
+    print(m,n)
     return A.reshape(m*n, order='F')
 
 
@@ -174,7 +175,7 @@ def C_H_OpInf(OpList, n, Sigma=None, eps=0., approx=True, BorisZhu=False):
 
 # Solving generic OpInf Problem with Willcox method.
 # Tikhonov parameter scaled by XX^T
-def G_OpInf(OpList, n, Sigma=None, eps=1.0e-15):
+def G_OpInf(OpList, n, Sigma=None, eps=0.0e-15):
 
     # Modification for block basis
     # Have to recompute everything...
