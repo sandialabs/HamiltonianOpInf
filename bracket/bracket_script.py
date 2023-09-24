@@ -21,34 +21,26 @@ import ROM_utils as ru
 # warnings.filterwarnings('ignore', '.*singular matrix!.*')
 
 # Creating exodus file
-fromFileName = 'beam_velIC_100.e'
-toFileName   = 'beam_vecIC_100_written.e'
+fromFileName = "bracket_velIC_100.e"
+toFileName   = "bracket_velIC_100_written.e"
 
 massName  = 'mass.mm'
 stiffName = 'stiff.mm'
 
-ROMvariables = ['exactSol_x', 'exactSol_y', 'exactSol_z',
-                '1-disp_G-IntRom_x', '1-disp_G-IntRom_y', '1-disp_G-IntRom_z',
-                '1-disp_G-OpRom_x', '1-disp_G-OpRom_y', '1-disp_G-OpRom_z',
-                '1-disp_H-IntRom_x', '1-disp_H-IntRom_y', '1-disp_H-IntRom_z',
-                '1-disp_C-H-OpRom_x', '1-disp_C-H-OpRom_y', '1-disp_C-H-OpRom_z',
-                '2-disp_NC-H-OpRom_x', '2-disp_NC-H-OpRom_y', '2-disp_NC-H-OpRom_z',
-                '2-disp_C-H-OpRom_x', '2-disp_C-H-OpRom_y', '2-disp_C-H-OpRom_z',
-                '2-disp_G-IntRom_x', '2-disp_G-IntRom_y', '2-disp_G-IntRom_z',
-                '2-disp_H-IntRom_x', '2-disp_H-IntRom_y', '2-disp_H-IntRom_z',
-                '3-disp_G-OpRom_x', '3-disp_G-OpRom_y', '3-disp_G-OpRom_z',
-                '3-disp_NC-H-OpRom_x', '3-disp_NC-H-OpRom_y', '3-disp_NC-H-OpRom_z',
-                '3-disp_C-H-OpRom_x', '3-disp_C-H-OpRom_y', '3-disp_C-H-OpRom_z',
-                '3-disp_G-IntRom_x', '3-disp_G-IntRom_y', '3-disp_G-IntRom_z',
-                '3-disp_H-IntRom_x', '3-disp_H-IntRom_y', '3-disp_H-IntRom_z']
+ROMvariables = ['disp_trueSoln_x', 'disp_trueSoln_y', 'disp_trueSoln_z',
+                'disp_IntRomG_x', 'disp_IntRomG_y', 'disp_IntRomG_z',
+                'disp_OpRomG_x', 'disp_OpRomG_y', 'disp_OpRomG_z',
+                'disp_IntRomH_x', 'disp_IntRomH_y', 'disp_IntRomH_z',
+                'disp_OpRomH_x', 'disp_OpRomH_y', 'disp_OpRomH_z']
 
-# # Use this the first time the file is created
-# exo_copy = exodus.copyTransfer(fromFileName, toFileName,
-#                                array_type='numpy',
-#                                additionalNodalVariables=ROMvariables)
-
-#Use this after file is created
-exo_copy = exodus.exodus(f'{toFileName}', array_type='numpy')
+try:
+    # Use this the first time the file is created
+    exo_copy = exodus.copyTransfer(fromFileName, toFileName,
+                                array_type='numpy',
+                                additionalNodalVariables=ROMvariables)
+except:
+    #Use this after file is created
+    exo_copy = exodus.exodus(f'{toFileName}', array_type='numpy')
 
 # Function which grabs everything from the exodus file
 # The snapshots are kind of weird -- energy drops after first iteration
@@ -59,12 +51,6 @@ def assemble_FOM(exo_file):
     Nt    = exo_file.num_times()
     mass  = mmread(massName)
     stiff = mmread(stiffName)
-
-    # # stiff = 0.5 * (stiff+stiff.T)
-    # # mass  = 0.5 * (mass+mass.T)
-    # M = mass.todense()
-    # K = stiff.todense()
-
 
     # Build L matrix
     zz    = np.zeros((3*N, 3*N))
@@ -140,7 +126,7 @@ def Hamil(data, A):
 if __name__ == "__main__":
 
     try: 
-        mat       = np.load('plate_snaps.npy', allow_pickle=True)[()]
+        mat       = np.load('bracket_snaps.npy', allow_pickle=True)[()]
         xData     = mat['x']
         Xac       = mat['x_test']
         # Xac       = mat['x']
@@ -159,7 +145,7 @@ if __name__ == "__main__":
         Xac   = ru.integrate_Linear_HFOM(tTest, data[0][:,0], Jsp, Asp)[0]
         dicto = {'x': xData, 'x_test': Xac, 'xDot': xDotData,
                 'gradH': gradHData, 'A_sparse': Asp, 'J_sparse': Jsp}
-        np.save('plate_snaps.npy', dicto)
+        np.save('bracket_snaps.npy', dicto)
 
 
     POD   = ru.Linear_Hamiltonian_ROM(xData)
@@ -172,7 +158,7 @@ if __name__ == "__main__":
     # QQmc  = ru.Linear_Hamiltonian_ROM(xData)
 
     try:
-        bases = np.load('plate_bases.npy', allow_pickle=True)[()]
+        bases = np.load('bracket_bases.npy', allow_pickle=True)[()]
         POD.reduced_basis, POD.basis_evals = bases['POD']
         POD.centered   = False
         PODmc.reduced_basis, PODmc.basis_evals = bases['PODmc']
@@ -200,7 +186,7 @@ if __name__ == "__main__":
                  'CLmc': [CLmc.reduced_basis, CLmc.basis_evals],
                  'QP': [QP.reduced_basis, QP.basis_evals],
                  'QPmc': [QPmc.reduced_basis, QP.basis_evals]}
-        np.save('plate_bases.npy', dicto)
+        np.save('bracket_bases.npy', dicto)
 
     POD.compute_basis_energies()
     PODmc.compute_basis_energies()
@@ -279,7 +265,7 @@ if __name__ == "__main__":
     for i in range(2):
         ax[i].set_xlabel('basis size $n$')
     plt.tight_layout()
-    plt.savefig('platePODenergy', transparent=True)
+    plt.savefig('bracketPODenergy', transparent=True)
     plt.show(block=False)
 
 
@@ -293,16 +279,13 @@ if __name__ == "__main__":
     rom_list = [PODmc, CLmc, QPmc]
     nList    = [4*(i+1) for i in range(25)]
 
-    fig, ax = plt.subplots(1, 3, figsize=(15,5), sharex=True, sharey=True)
-    ax[0].set_ylabel('relative $L^2$ error')
-
     titleList = ['Ordinary POD', 
                  'Cotangent Lift',
                  'Block $(q,p)$']
     alpha=1
 
     try:
-        solns = np.load('plate_solns.npy', allow_pickle=True)[()]
+        solns = np.load('bracket_solns.npy', allow_pickle=True)[()]
         XrecIntG    = solns['IntG']
         XrecOpGno   = solns['OpGno']
         XrecOpGre   = solns['OpGre']
@@ -384,10 +367,10 @@ if __name__ == "__main__":
                  'OpGre': XrecOpGre, 'IntHinc': XrecIntHinc,
                  'IntHcon': XrecIntHcon, 'OpHno': XrecOpHno,
                  'OpHre': XrecOpHre}
-        np.save('plate_solns.npy', dicto)
+        np.save('bracket_solns.npy', dicto)
 
     try:
-        errs = np.load('plate_errors.npy', allow_pickle=True)[()]
+        errs = np.load('bracket_errors.npy', allow_pickle=True)[()]
         eIntG, HamIntG       = errs['IntG']
         eOpGno, HamOpGno     = errs['OpGno']
         eOpGre, HamOpGre     = errs['OpGre']
@@ -440,8 +423,11 @@ if __name__ == "__main__":
                  'OpGre': [eOpGre, HamOpGre], 'IntHinc': [eIntHinc, HamIntHinc],
                  'IntHcon': [eIntHcon, HamIntHcon], 'OpHno': [eOpHno, HamOpHno],
                  'OpHre': [eOpHre, HamOpHre]}
-        np.save('plate_errors.npy', dicto)
+        np.save('bracket_errors.npy', dicto)
 
+
+    fig, ax = plt.subplots(1, 3, figsize=(15,5), sharex=True, sharey=True)
+    ax[0].set_ylabel('relative $L^2$ error')
 
     for i in range(len(rom_list)):
 
@@ -456,30 +442,129 @@ if __name__ == "__main__":
 
         ax.flatten()[i].semilogy(nList, eIntG[i], 
                                     label='Intrusive G-ROM (MC)',
-                                    marker='o', linestyle='-', linewidth=0.5, markersize=6, alpha=alpha)
+                                    marker='o', linestyle='-', linewidth=0.5,
+                                    markersize=6, color=cmap.colors[0])
         ax.flatten()[i].semilogy(nList, eOpGno[i], 
                                     label='OpInf G-ROM (MC, original)',
-                                    marker='s', linestyle='--', linewidth=0.5, markersize=6, alpha=alpha)
+                                    marker='o', linestyle='--', linewidth=0.5,
+                                    markersize=3, color=cmap.colors[1])
         ax.flatten()[i].semilogy(nList, eOpGre[i], 
                                     label='OpInf G-ROM (MC, reprojected)',
-                                    marker='s', linestyle='-', linewidth=0.5, markersize=6, alpha=alpha)
+                                    marker='o', linestyle='-', linewidth=0.5,
+                                    markersize=3, color=cmap.colors[2])
         ax.flatten()[i].semilogy(nList, eIntHinc[i],
                                     label='Intrusive H-ROM (MC, inconsistent)',
-                                    marker='*', linestyle='--', linewidth=0.5, markersize=6, alpha=alpha)
+                                    marker='s', linestyle='--', linewidth=0.5,
+                                    markersize=6, color=cmap.colors[3])
         ax.flatten()[i].semilogy(nList, eIntHcon[i],
                                     label='Intrusive H-ROM (MC, consistent)',
-                                    marker='*', linestyle='-', linewidth=0.5, markersize=6, alpha=alpha)
+                                    marker='s', linestyle='-', linewidth=0.5,
+                                    markersize=6, color=cmap.colors[4])
         ax.flatten()[i].semilogy(nList, eOpHno[i], 
                                     label='OpInf H-ROM (MC, original)',
-                                    marker='s', linestyle='--', linewidth=0.5, markersize=6, alpha=alpha)
+                                    marker='s', linestyle='--', linewidth=0.5,
+                                    markersize=3, color=cmap.colors[5])
         ax.flatten()[i].semilogy(nList, eOpHre[i], 
                                     label='OpInf H-ROM (MC, reprojected)',
-                                    marker='s', linestyle='-', linewidth=0.5, markersize=6, alpha=alpha)
+                                    marker='s', linestyle='-', linewidth=0.5,
+                                    markersize=3, color=cmap.colors[6])
         ax.flatten()[i].set_ylim([10**-12, 10.])
         ax.flatten()[i].set_title(f'{titleList[i]}')
-        ax.flatten()[i].legend(prop={'size':8}, loc=2)
+        ax.flatten()[i].legend(prop={'size':8}, loc=3)
         ax.flatten()[i].set_xlabel('basis size $n$')
 
     plt.tight_layout()
-    plt.savefig(f'PlatePlotT', transparent=True)
+    # plt.savefig(f'BracketPlotT', transparent=True)
     plt.show()
+
+
+    ########## Extra Plot for Irina ###########
+    n = 20
+    cmap = plt.get_cmap("Dark2")
+
+    fig, ax = plt.subplots(1, 1, figsize=(5,5), sharex=True, sharey=True)
+    ax.set_ylabel('relative $L^2$ error')
+
+    ax.semilogy(nList[:n], eIntG[0][:n], 
+                                label='Intrusive G-ROM (MC)',
+                                marker='o', linestyle='-', linewidth=1.5,
+                                markersize=6, color=cmap.colors[0])
+    # ax.semilogy(nList[:n], eOpGno[i][:n], 
+    #                             label='OpInf G-ROM (MC, original)',
+    #                             marker='o', linestyle='--', linewidth=0.5,
+    #                             markersize=3, color=cmap.colors[1])
+    ax.semilogy(nList[:n], eOpGre[0][:n], 
+                                label='OpInf G-ROM (MC, reprojected)',
+                                marker='o', linestyle='--', linewidth=0.5,
+                                markersize=2, color=cmap.colors[1])
+    # ax.semilogy(nList[:n], eIntHinc[0][:n],
+    #                             label='Intrusive H-ROM (MC, inconsistent)',
+    #                             marker='s', linestyle='--', linewidth=0.5,
+    #                             markersize=6, color=cmap.colors[3])
+    ax.semilogy(nList[:n], eIntHcon[0][:n],
+                                label='Intrusive H-ROM (MC, consistent)',
+                                marker='s', linestyle='-', linewidth=1.5,
+                                markersize=6, color=cmap.colors[2])
+    # ax.semilogy(nList[:n], eOpHno[0][:n], 
+    #                             label='OpInf H-ROM (MC, original)',
+    #                             marker='s', linestyle='--', linewidth=0.5,
+    #                             markersize=3, color=cmap.colors[5])
+    ax.semilogy(nList[:n], eOpHre[0][:n], 
+                                label='OpInf H-ROM (MC, reprojected)',
+                                marker='s', linestyle='--', linewidth=0.5,
+                                markersize=2, color=cmap.colors[3])
+    ax.set_ylim([10**-9, 10.])
+    ax.set_title(f'{titleList[0]}')
+    ax.legend(prop={'size':8}, loc=3)
+    ax.set_xlabel('basis size $n$')
+
+    plt.tight_layout()
+    plt.savefig(f'For_Irina_bracket', transparent=True)
+    plt.show()
+
+
+    N, i, j = exo_copy.num_nodes(), 0, 16
+
+    # disp_xTest  = Xac[::3][:N,:]
+    # disp_yTest  = Xac[1::3][:N,:]
+    # disp_zTest  = Xac[2::3][:N,:]
+
+    # disp_xIntG = XrecIntG[i,j][::3][:N,:]
+    # disp_yIntG = XrecIntG[i,j][1::3][:N,:]
+    # disp_zIntG = XrecIntG[i,j][2::3][:N,:]
+
+    # disp_xOpG  = XrecOpGre[i,j][::3][:N,:]
+    # disp_yOpG  = XrecOpGre[i,j][1::3][:N,:]
+    # disp_zOpG  = XrecOpGre[i,j][2::3][:N,:]
+
+    # disp_xIntH = XrecIntHcon[i,j][::3][:N,:]
+    # disp_yIntH = XrecIntHcon[i,j][1::3][:N,:]
+    # disp_zIntH = XrecIntHcon[i,j][2::3][:N,:]
+
+    # disp_xOpH  = XrecOpHre[i,j][::3][:N,:]
+    # disp_yOpH  = XrecOpHre[i,j][1::3][:N,:]
+    # disp_zOpH  = XrecOpHre[i,j][2::3][:N,:]
+
+    # for i in range(exo_copy.num_times()):
+
+    #     exo_copy.put_node_variable_values("disp_trueSoln_x", i+1, disp_xTest[:,i])
+    #     exo_copy.put_node_variable_values("disp_trueSoln_y", i+1, disp_yTest[:,i])
+    #     exo_copy.put_node_variable_values("disp_trueSoln_z", i+1, disp_zTest[:,i])
+
+    #     exo_copy.put_node_variable_values("disp_IntRomG_x", i+1, disp_xIntG[:,i])
+    #     exo_copy.put_node_variable_values("disp_IntRomG_y", i+1, disp_yIntG[:,i])
+    #     exo_copy.put_node_variable_values("disp_IntRomG_z", i+1, disp_zIntG[:,i])
+
+    #     exo_copy.put_node_variable_values("disp_OpRomG_x", i+1, disp_xOpG[:,i])
+    #     exo_copy.put_node_variable_values("disp_OpRomG_y", i+1, disp_yOpG[:,i])
+    #     exo_copy.put_node_variable_values("disp_OpRomG_z", i+1, disp_zOpG[:,i])
+
+    #     exo_copy.put_node_variable_values("disp_IntRomH_x", i+1, disp_xIntH[:,i])
+    #     exo_copy.put_node_variable_values("disp_IntRomH_y", i+1, disp_yIntH[:,i])
+    #     exo_copy.put_node_variable_values("disp_IntRomH_z", i+1, disp_zIntH[:,i])
+
+    #     exo_copy.put_node_variable_values("disp_OpRomH_x", i+1, disp_xOpH[:,i])
+    #     exo_copy.put_node_variable_values("disp_OpRomH_y", i+1, disp_yOpH[:,i])
+    #     exo_copy.put_node_variable_values("disp_OpRomH_z", i+1, disp_zOpH[:,i])
+
+    print(eIntG[0][16], eIntHcon[0][16])
