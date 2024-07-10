@@ -15,6 +15,10 @@ from matplotlib.animation import FuncAnimation
 
 from sklearn.utils.extmath import randomized_svd
 
+import scipy.sparse as sparse
+import sys
+
+
 class Linear_Variational_ROM:
     def __init__(self, snapshots):
         self.N, self.N_t = snapshots.shape
@@ -53,12 +57,12 @@ class Linear_Variational_ROM:
             half_N   = self.N // 2
             U_q, S_q = np.linalg.svd(X[:half_N])[:2]
             self.reduced_basis = [U_q[:,:rmax], U_q[:,:rmax]]
-            self.basis_evals   = S_q[:rmax]
+            self.basis_evals   = [S_q[:rmax], S_q[:rmax]]
         if option == 'complex_SVD':  # Will need to build mtx later
             half_N   = self.N // 2
             U_c, S_c = np.linalg.svd(X[:half_N] + X[half_N:]*1j)[:2]
             self.reduced_basis = [U_c[:,:rmax], U_c[:,:rmax]]
-            self.basis_evals   = S_q[:rmax]
+            self.basis_evals   = [S_c[:rmax], S_c[:rmax]]
 
     def compute_basis_energies(self):
         try: self.reduced_basis, self.basis_evals
@@ -100,10 +104,15 @@ class Linear_Variational_ROM:
 
     def basis_from_list(self, basis_list, two_r):
         r    = two_r // 2
-        U_11 = basis_list[0][:,:r]
-        U_22 = basis_list[1][:,:r]
-        ZZ   = np.zeros_like(U_11)
-        return csc_matrix(np.block([[U_11, ZZ], [ZZ, U_22]]))
+        if not np.iscomplexobj(basis_list[0]):
+            U_11 = basis_list[0][:,:r]
+            U_22 = basis_list[1][:,:r]
+            ZZ   = np.zeros_like(U_11)
+            return np.block([[U_11, ZZ], [ZZ, U_22]])
+        else:
+            Ur = np.real(basis_list[0])[:,:r]
+            Ui = np.imag(basis_list[0])[:,:r]
+            return np.block([[Ur, -Ui], [Ui, Ur]])
 
 
 class Linear_Hamiltonian_ROM(Linear_Variational_ROM):
@@ -119,33 +128,17 @@ class Linear_Hamiltonian_ROM(Linear_Variational_ROM):
         x_0 = self.snapshots[:,0]
 
         if not isinstance(self.reduced_basis, list):
-            # check if operators have been precomputed
-            try: self.big_JA_hat, self.big_ic, self.big_x0b4JA
-            except:
-                # if not, compute them and store
-                RB              = self.reduced_basis
-                self.big_JA_hat = RB.T @ J @ A @ RB
-                self.big_ic     = RB.T @ x_0
-                self.big_x0b4JA = np.zeros_like(self.big_ic)
-                if self.centered:
-                    # compute the part needed for centering
-                    self.big_x0b4JA = RB.T @ J @ A @ x_0
-                    self.big_ic     = np.zeros_like(self.big_x0b4JA)
-            # now set the reduced operators
-            self.JA_hat = self.big_JA_hat[:r,:r]
-            self.ic     = self.big_ic[:r]
-            self.x0b4JA = self.big_x0b4JA[:r]
+            RB = self.reduced_basis[:,:r]
         else:
             # list bases have to recompute everything
-            RB          = self.basis_from_list(self.reduced_basis, r)
-            self.JA_hat = RB.T @ J @ A @ RB
-            self.ic     = RB.T @ x_0
-            self.x0b4JA = np.zeros(r)
-            if self.centered:
-                self.ic     = np.zeros(r)
-                self.x0b4JA = RB.T @ J @ A @ x_0
-            if issparse(self.JA_hat):
-                self.JA_hat = self.JA_hat.todense()
+            RB = self.basis_from_list(self.reduced_basis, r)
+
+        self.JA_hat = RB.T @ J @ A @ RB
+        self.ic     = RB.T @ x_0
+        self.x0b4JA = np.zeros(r)
+        if self.centered:
+            self.ic     = np.zeros(r)
+            self.x0b4JA = RB.T @ J @ A @ x_0
 
     def assemble_Hamiltonian_ROM(self, r, J, A):
         try: self.reduced_basis
@@ -156,43 +149,28 @@ class Linear_Hamiltonian_ROM(Linear_Variational_ROM):
         x_0 = self.snapshots[:,0]
 
         if not isinstance(self.reduced_basis, list):
-            # check if operators have been precomputed
-            try: self.big_J_hat, self.big_A_hat, self.big_ic, self.big_x0b4A
-            except:
-                # if not, compute them and store
-                RB             = self.reduced_basis
-                self.big_J_hat = RB.T @ J @ RB
-                self.big_A_hat = RB.T @ A @ RB
-                self.big_ic    = RB.T @ x_0
-                self.big_x0b4A = np.zeros_like(self.big_ic)
-                if self.centered:
-                    # compute the part needed for centering
-                    self.big_x0b4A = RB.T @ A @ x_0
-                    self.big_ic    = np.zeros_like(self.big_x0b4A)
-            # now set the reduced operators
-            self.J_hat = self.big_J_hat[:r,:r]
-            self.A_hat = self.big_A_hat[:r,:r]
-            self.ic    = self.big_ic[:r]
-            self.x0b4A = self.big_x0b4A[:r]
+            RB = self.reduced_basis[:,:r]
         else:
             # list bases have to recompute everything
-            RB         = self.basis_from_list(self.reduced_basis, r)
-            self.J_hat = RB.T @ J @ RB
-            self.A_hat = RB.T @ A @ RB
-            self.ic    = RB.T @ x_0
-            self.x0b4A = np.zeros(r)
-            if self.centered:
-                self.x0b4A = RB.T @ A @ x_0
-                self.ic    = np.zeros(r)
-            if issparse(self.J_hat):
-                self.J_hat = self.J_hat.todense()
-                self.A_hat = self.A_hat.todense()
+            RB = self.basis_from_list(self.reduced_basis, r)
+        
+        self.J_hat = RB.T @ J @ RB
+        self.A_hat = RB.T @ A @ RB
+        self.ic    = RB.T @ x_0
+        self.x0b4A = np.zeros(r)
+        if self.centered:
+            self.x0b4A = RB.T @ A @ x_0
+            self.ic    = np.zeros(r)
 
     def integrate_naive_ROM(self, times):
         try: JA_hat = self.JA_hat
         except:
             print('naive ROM operators are not set!')
         
+        # Fix sparse/dense errors
+        if issparse(JA_hat):
+            JA_hat = JA_hat.todense()    
+    
         dt = times[1] - times[0]
         r  = len(self.ic)
         
@@ -214,6 +192,11 @@ class Linear_Hamiltonian_ROM(Linear_Variational_ROM):
         except:
             print('Hamiltonian ROM operators are not set!')
 
+        # Fix sparse/dense errors
+        if issparse(J_hat) or issparse(A_hat):
+            J_hat = J_hat.todense()
+            A_hat = A_hat.todense()
+
         dt = times[1] - times[0]
         r  = len(self.ic)
         if eps != 0.:
@@ -232,10 +215,6 @@ class Linear_Hamiltonian_ROM(Linear_Variational_ROM):
         else:
             LHS      = J_hat + dt/2 * A_hat
             rhs_func = lambda x: -dt * (self.x0b4A + A_hat @ x)
-
-        # print(det(J_hat))
-        # print(np.sum(np.linalg.inv(J_hat)**2)-r)
-        # print(np.linalg.norm(A_hat, 2))
 
         lu, piv = lu_factor(LHS)
 
@@ -259,47 +238,26 @@ class Linear_Hamiltonian_ROM(Linear_Variational_ROM):
             X = X - X[:,0].reshape(-1,1)
 
         if not isinstance(self.reduced_basis, list):
-            # check if operators have been precomputed
-            try: self.big_JA_hat, self.big_ic, self.big_x0b4JA
-            except:
-                # if not, compute them and store
-                RB                 = self.reduced_basis
-                big_X_hat_X_hat_T  = RB.T @ X @ X.T @ RB
-                big_Xt_hat         = RB.T @ Xt
-                self.big_ic        = RB.T @ x_0
-                self.big_x0b4JA    = np.zeros(RB.shape[1])
-                if self.centered:
-                    self.big_x0b4JA = RB.T @ Xt[:,0]
-                    big_Xt_hat     -= self.big_x0b4JA.reshape(-1,1)
-                    self.big_ic     = np.zeros_like(self.big_x0b4JA)
-
-                rhs             = big_Xt_hat @ X.T @ RB
-                LHS             = (big_X_hat_X_hat_T 
-                                   + eps * np.eye(RB.shape[1]))
-                self.big_JA_hat = solve(LHS, rhs.T).T
-
-            # now set the reduced operators
-            self.JA_hat = self.big_JA_hat[:r,:r]
-            self.ic     = self.big_ic[:r]
-            self.x0b4JA = self.big_x0b4JA[:r]
+            RB = self.reduced_basis[:,:r]
         else:
             # list bases have to recompute everything
-            RB            = self.basis_from_list(self.reduced_basis, r)
-            X_hat_X_hat_T = RB.T @ X @ X.T @ RB
-            Xt_hat        = RB.T @ Xt
-            self.ic       = RB.T @ x_0
-            self.x0b4JA   = np.zeros(r)
-            if self.centered:
-                self.x0b4JA = RB.T @ Xt[:,0]
-                Xt_hat     -= self.x0b4JA.reshape(-1,1)
-                self.ic     = np.zeros(r)
+            RB = self.basis_from_list(self.reduced_basis, r)
 
-            if reproject:
-                Xt_hat  = self.JA_hat @ RB.T @ X
+        X_hat_X_hat_T = RB.T @ X @ X.T @ RB
+        Xt_hat        = RB.T @ Xt
+        self.ic       = RB.T @ x_0
+        self.x0b4JA   = np.zeros(r)
+        if self.centered:
+            self.x0b4JA = RB.T @ Xt[:,0]
+            Xt_hat     -= self.x0b4JA.reshape(-1,1)
+            self.ic     = np.zeros(r)
 
-            rhs         = Xt_hat @ X.T @ RB
-            LHS         = X_hat_X_hat_T + eps * np.eye(r)
-            self.JA_hat = solve(LHS, rhs.T).T
+        if reproject:
+            Xt_hat  = RB.T @ self.J @ self.A @ RB @ RB.T @ X
+
+        rhs         = Xt_hat @ X.T @ RB
+        LHS         = X_hat_X_hat_T + eps * np.eye(r)
+        self.JA_hat = solve(LHS, rhs.T).T
 
     def infer_canonical_Hamiltonian(self, r, X, Xt, J, eps=0., old=False, 
                                     reproject=False):
@@ -314,53 +272,25 @@ class Linear_Hamiltonian_ROM(Linear_Variational_ROM):
            X = X - X[:,0].reshape(-1,1)
 
         if not isinstance(self.reduced_basis, list):
-            # check if operators have been precomputed
-            try: (self.big_X_hat_X_hat_T, self.big_Xt_hat, self.big_X_hat,
-                  self.big_Xt_part, self.big_J_hat, self.big_ic, self.big_x0b4A)
-            except:
-                # if not, compute them and store
-                RB                      = self.reduced_basis
-                self.big_X_hat_X_hat_T  = RB.T @ X @ X.T @ RB
-                self.big_Xt_hat         = RB.T @ Xt
-                self.big_Xt_part        = RB.T @ -J @ Xt
-                self.big_X_hat          = RB.T @ X
-                self.big_J_hat          = RB.T @ J @ RB
-                self.big_ic             = RB.T @ x_0
-                self.big_x0b4A          = np.zeros_like(self.big_ic)
-                if self.centered:
-                    self.big_x0b4A      = RB.T @ -J @ Xt[:,0]
-                    self.big_ic         = np.zeros_like(self.big_x0b4A)
-
-            # now set the reduced operators
-            X_hat_X_hat_T  = self.big_X_hat_X_hat_T[:r,:r]
-            Xt_hat         = self.big_Xt_hat[:r]
-            Xt_part        = self.big_Xt_part[:r]
-            X_hat          = self.big_X_hat[:r]
-            self.J_hat     = self.big_J_hat[:r,:r]
-            self.ic        = self.big_ic[:r]
-            self.x0b4A     = self.big_x0b4A[:r]
-
-            if reproject:
-                RB = self.reduced_basis[:,:r] 
-                Xt_part = RB.T @ self.A @ RB @ RB.T @ X
-                Xt_hat = Xt_part
+            RB = self.reduced_basis[:,:r]
         else:
             # list bases have to recompute everything
-            RB             = self.basis_from_list(self.reduced_basis, r)
-            X_hat_X_hat_T  = RB.T @ X @ X.T @ RB
-            Xt_hat         = RB.T @ Xt
-            Xt_part        = RB.T @ -J @ Xt
-            X_hat          = RB.T @ X
-            self.J_hat     = RB.T @ J @ RB
-            self.ic        = RB.T @ x_0
-            self.x0b4A     = np.zeros(r)
-            if self.centered:
-                self.x0b4A = RB.T @ -J @ Xt[:,0]
-                self.ic    = np.zeros(r)
+            RB = self.basis_from_list(self.reduced_basis, r)
+            
+        X_hat_X_hat_T  = RB.T @ X @ X.T @ RB
+        Xt_hat         = RB.T @ Xt
+        Xt_part        = RB.T @ -J @ Xt
+        X_hat          = RB.T @ X
+        self.J_hat     = RB.T @ J @ RB
+        self.ic        = RB.T @ x_0
+        self.x0b4A     = np.zeros(r)
+        if self.centered:
+            self.x0b4A = RB.T @ -J @ Xt[:,0]
+            self.ic    = np.zeros(r)
 
-            if reproject:
-                Xt_part = RB.T @ self.A @ RB @ RB.T @ X
-                Xt_hat = Xt_part
+        if reproject:
+            Xt_part = RB.T @ self.A @ RB @ RB.T @ X
+            Xt_hat = Xt_part
 
         if eps != 0.:
             n = r // 2
@@ -384,8 +314,9 @@ class Linear_Hamiltonian_ROM(Linear_Variational_ROM):
         rhs        = temp + temp.T
         P          = csc_matrix(np.kron(np.eye(r), X_hat_X_hat_T) 
                                 + np.kron(X_hat_X_hat_T, np.eye(r)))
-        # reg        = 2 * eps * identity(r**2)
-        A_hat      = spsolve(P, vec(rhs).squeeze()).reshape((r,r), order='F')
+        reg        = 2 * eps * identity(r**2)
+
+        A_hat      = spsolve(P+reg, vec(rhs).squeeze()).reshape((r,r), order='F')
         self.A_hat = 0.5 * (A_hat + A_hat.T)
 
         # rhs         = Xt_hat @ X.T @ RB
@@ -496,42 +427,47 @@ class Linear_Lagrangian_ROM(Linear_Variational_ROM):
         q_dot_0  = q_dot[:,0].flatten()
         q_ddot_0 = q_ddot[:,0].flatten()
 
-        if not isinstance(self.reduced_basis, list):
-            # check if operators have been precomputed
-            try: self.big_M_hat, self.big_K_hat, self.big_ics
-            except:
-                # if not, compute them and store
-                RB               = self.reduced_basis
-                self.big_M_hat   = RB.T @ M @ RB
-                self.big_K_hat   = RB.T @ K @ RB
-                big_q_hat_0      = RB.T @ q_0
-                big_q_hat_dot_0  = RB.T @ q_dot_0
-                big_q_hat_ddot_0 = RB.T @ q_ddot_0
-                self.big_ics     = [big_q_hat_0, big_q_hat_dot_0, 
-                                    big_q_hat_ddot_0]
-                self.big_x0b4K   = np.zeros_like(big_q_hat_0)
-                if self.centered:
-                    # compute the part needed for centering
-                    self.big_x0b4K += RB.T @ K @ q_0
-                    self.big_ic     = np.zeros_like(self.big_x0b4K)
-            # now set the reduced operators
-            self.M_hat = self.big_M_hat[:r,:r]
-            self.K_hat = self.big_K_hat[:r,:r]
-            self.ics   = [self.big_ics[i][:r] for i in range(3)]
-            self.x0b4K = self.big_x0b4K[:r]
-        else:
-            # list bases have to recompute everything
-            RB = self.basis_from_list(self.reduced_basis, r)
-            self.M_hat = RB.T @ M @ RB
-            self.K_hat = RB.T @ K @ RB
-            self.ics   = [RB.T @ q_0, RB.T @ q_dot_0, RB.T @ q_ddot_0]
-            self.x0b4K = np.zeros(r)
+        # if not isinstance(self.reduced_basis, list):
+        # check if operators have been precomputed
+        try: self.big_M_hat, self.big_K_hat, self.big_ics
+        except:
+            # if not, compute them and store
+            RB               = self.reduced_basis
+            self.big_M_hat   = RB.T @ M @ RB
+            self.big_K_hat   = RB.T @ K @ RB
+            big_q_hat_dot_0  = RB.T @ q_dot_0
+            big_q_hat_ddot_0 = RB.T @ q_ddot_0
+            # big_q_hat_dot_0  = np.zeros(RB.shape[1])
+            # big_q_hat_ddot_0  = np.zeros(RB.shape[1])
+            big_q_hat_0      = np.zeros(RB.shape[1])
+            self.big_x0b4K   = np.zeros(RB.shape[1])
             if self.centered:
-                self.x0b4K += RB.T @ K @ q_0
-                self.ic     = np.zeros(r)
-            if issparse(self.M_hat):
-                self.M_hat = self.M_hat.todense()
-                self.K_hat = self.K_hat.todense()
+                # compute the part needed for centering
+                self.big_x0b4K   += RB.T @ K @ q_0
+            else:
+                big_q_hat_0  += RB.T @ q_0
+                # big_q_hat_dot_0  += RB.T @ q_dot_0
+                # big_q_hat_ddot_0 += RB.T @ q_ddot_0
+            self.big_ics     = [big_q_hat_0, big_q_hat_dot_0, 
+                                big_q_hat_ddot_0]
+        # now set the reduced operators
+        self.M_hat = self.big_M_hat[:r,:r]
+        self.K_hat = self.big_K_hat[:r,:r]
+        self.ics   = [self.big_ics[i][:r] for i in range(3)]
+        self.x0b4K = self.big_x0b4K[:r]
+        # else:
+        #     # list bases have to recompute everything
+        #     RB = self.basis_from_list(self.reduced_basis, r)
+        #     self.M_hat = RB.T @ M @ RB
+        #     self.K_hat = RB.T @ K @ RB
+        #     self.ics   = [RB.T @ q_0, RB.T @ q_dot_0, RB.T @ q_ddot_0]
+        #     self.x0b4K = np.zeros(r)
+        #     if self.centered:
+        #         self.x0b4K += RB.T @ K @ q_0
+        #         self.ic     = np.zeros(r)
+        #     if issparse(self.M_hat):
+        #         self.M_hat = self.M_hat.todense()
+        #         self.K_hat = self.K_hat.todense()
 
     def integrate_Lagrangian_ROM(self, times, gamma=1./2, beta=1./4):
         try: self.M_hat, self.K_hat
@@ -639,9 +575,8 @@ def vec(A):
 
 # Compute Hamiltonian
 def compute_Hamiltonian(data, A):
-    result = np.zeros(data.shape[1])
-    for i in range(len(result)):
-        result[i] = data[:,i].T @ A @ data[:,i]
+    Adata = A @ data
+    result = np.einsum('ia,ia->a', Adata, data)
     return 0.5 * result
 
 
@@ -921,7 +856,8 @@ def integrate_OpInf_ROM(tTest, DhatOp, ic, UU, L=None, approx=False):
 
 # Make mp4 movie of an array
 def animate_array(arrs, styles, labels, xCoords,
-                  eps_x=0.01, eps_y=0.1, yLims=None, legend_loc=0, save=True):
+                  eps_x=0.01, eps_y=0.1, yLims=None, legend_loc=0,
+                  cmap = "Dark2", colorIdx = range(10), save=True):
     n_t = arrs[0].shape[-1]
     
     # Define the update function that will be called at each iteration
@@ -931,6 +867,9 @@ def animate_array(arrs, styles, labels, xCoords,
         return lines,
 
     fig, ax = plt.subplots()
+
+    cmap = plt.get_cmap(cmap)
+    colors = [cmap.colors[i] for i in colorIdx]
 
     ## Should fix this to take care of zero....
     xmin = (xCoords.min()*(1-eps_x) if xCoords.min() > 0
@@ -947,11 +886,11 @@ def animate_array(arrs, styles, labels, xCoords,
 
     lines = [0 for i in range(len(arrs))]
     for i,line in enumerate(lines):
-        lines[i], = ax.plot(xCoords, arrs[i][:,0], 
+        lines[i], = ax.plot(xCoords, arrs[i][:,0], color=colors[i],
                             linestyle=styles[i], label=labels[i])
     plt.legend(loc=legend_loc)
 
     plotFunc = partial(update, lines, arrs)
-    anim = FuncAnimation(fig, plotFunc, frames=n_t, interval=20)
-    anim.save('myarray.mp4') if save else None
+    anim = FuncAnimation(fig, plotFunc, frames=n_t, interval=1)
+    anim.save('myarray.gif', writer='imagemagick', fps=60) if save else None
     plt.show()
