@@ -1,0 +1,15 @@
+# Nothing allowed
+*
+
+# ...except for repository metadata
+!.gitignore
+!README.md
+!requirements.txt
+
+# ...and jupyter notebooks and python source files.
+!*.ipynb
+!*.py
+
+# ...and intermediate notebook results.
+!data
+!data/*.npy
